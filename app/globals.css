@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   NaviLag Design Tokens
+   Dark, flat, utility-first. No gradients on chrome.
+   --------------------------------------------------------------- */
+
+:root {
+  /* Surfaces — layered dark neutrals with a faint cool tint */
+  --bg-base: #0a0a0c;
+  --bg-elevated: #141418;
+  --bg-overlay: #1c1c22;
+  --bg-hover: #23232b;
+
+  /* Borders & dividers */
+  --border-subtle: #1f1f26;
+  --border-default: #2a2a33;
+  --border-strong: #3a3a45;
+
+  /* Text */
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-disabled: #52525b;
+
+  /* Accent — electric blue. Used for active states, routes, primary CTAs. */
+  --accent: #3b9eff;
+  --accent-hover: #5cb0ff;
+  --accent-dim: #2563c4;
+  --accent-fg: #0a0a0c; /* text color on accent bg */
+
+  /* Category colors — for markers and chips */
+  --cat-faculty: #3b9eff; /* blue / accent */
+  --cat-hostel: #fbbf24; /* amber */
+  --cat-library: #22d3ee; /* cyan */
+  --cat-cafeteria: #fb7185; /* rose */
+  --cat-admin: #a78bfa; /* violet */
+  --cat-sports: #34d399; /* emerald */
+  --cat-medical: #f87171; /* red */
+  --cat-landmark: #e4e4e7; /* neutral */
+
+  /* Semantic */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows — soft and dark, no glow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@theme inline {
+  --color-bg-base: var(--bg-base);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-overlay: var(--bg-overlay);
+  --color-bg-hover: var(--bg-hover);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-fg: var(--accent-fg);
+
+  --color-cat-faculty: var(--cat-faculty);
+  --color-cat-hostel: var(--cat-hostel);
+  --color-cat-library: var(--cat-library);
+  --color-cat-cafeteria: var(--cat-cafeteria);
+  --color-cat-admin: var(--cat-admin);
+  --color-cat-sports: var(--cat-sports);
+  --color-cat-medical: var(--cat-medical);
+  --color-cat-landmark: var(--cat-landmark);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --font-display: var(--font-space-grotesk);
+  --font-sans: var(--font-inter-tight);
+}
+
+/* ---------------------------------------------------------------
+   Base layer
+   --------------------------------------------------------------- */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* Selection */
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* Scrollbar — minimal dark */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Display font utility */
+.font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Mono-feeling tabular numbers (good for distance/time HUD) */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Subtle grain overlay class — for atmosphere on flat dark surfaces */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+  mix-blend-mode: overlay;
+}
+
+/* ---------------------------------------------------------------
+   Leaflet dark overrides — applied globally so the map blends in
+   --------------------------------------------------------------- */
+
+.leaflet-container {
+  background: var(--bg-base) !important;
+  font-family: var(--font-sans), system-ui, sans-serif !important;
+  outline: none;
+}
+
+.leaflet-control-attribution {
+  background: rgba(20, 20, 24, 0.7) !important;
+  color: var(--text-muted) !important;
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-sm) 0 0 0 !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+}
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+
+.leaflet-control-zoom {
+  border: 1px solid var(--border-default) !important;
+  box-shadow: var(--shadow-md) !important;
+  border-radius: var(--radius-md) !important;
+  overflow: hidden;
+}
+.leaflet-control-zoom a {
+  background: var(--bg-overlay) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-subtle) !important;
+  transition: background 150ms var(--ease-out);
+}
+.leaflet-control-zoom a:hover {
+  background: var(--bg-hover) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-overlay) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+.leaflet-popup-tip {
+  background: var(--bg-overlay) !important;
+  border: 1px solid var(--border-default) !important;
+}
+
+/* ---------------------------------------------------------------
+   NaviLag custom markers
+   --------------------------------------------------------------- */
+
+.navilag-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+}
+
+.navilag-marker,
+.navilag-user-marker {
+  display: block;
+  pointer-events: auto;
+  transition: transform 200ms var(--ease-out);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+.navilag-marker:hover {
+  transform: scale(1.15);
+}
+
+.navilag-marker.is-active {
+  z-index: 1000;
+}
