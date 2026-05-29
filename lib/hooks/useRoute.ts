@@ -16,6 +16,8 @@
  *   - The geometry is encoded as a polyline by default; we ask for
  *     GeoJSON instead to skip the decoding step.
  *   - "Walking" profile is at /route/v1/foot/...
+ *   - Now requests steps=true and flattens legs[].steps into our
+ *     RouteStep[] shape for turn-by-turn UI.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -60,7 +62,7 @@ function buildOsrmUrl(from: LatLng, to: LatLng): string {
   const params = new URLSearchParams({
     overview: "full", // include the full geometry, not simplified
     geometries: "geojson", // return geometry as GeoJSON, easier to consume
-    steps: "false", // we don't show turn-by-turn yet
+    steps: "true", // request turn-by-turn maneuvers
   });
   return `${OSRM_BASE}/route/v1/foot/${coords}?${params.toString()}`;
 }
@@ -68,6 +70,21 @@ function buildOsrmUrl(from: LatLng, to: LatLng): string {
 // ---------------------------------------------------------------------------
 // OSRM response shape (only the fields we touch)
 // ---------------------------------------------------------------------------
+
+type OsrmStep = {
+  distance: number;
+  duration: number;
+  maneuver: {
+    location: [number, number]; // [lng, lat]
+    type?: string;
+    modifier?: string;
+  };
+  name?: string;
+};
+
+type OsrmLeg = {
+  steps: OsrmStep[];
+};
 
 type OsrmResponse = {
   code: string;
@@ -78,9 +95,46 @@ type OsrmResponse = {
       type: "LineString";
       coordinates: [number, number][]; // [lng, lat] pairs
     };
+    legs: OsrmLeg[];
   }>;
   message?: string;
 };
+
+// Pretty-print a turn-by-turn maneuver. OSRM ships raw maneuver types
+// like "turn"/"depart"/"arrive" plus modifiers like "left"/"right". We
+// stitch them into a single human-readable string.
+function formatManeuver(step: OsrmStep): string {
+  const type = step.maneuver.type ?? "continue";
+  const modifier = step.maneuver.modifier;
+  const street = step.name && step.name.trim() ? step.name : "the path";
+
+  switch (type) {
+    case "depart":
+      return `Head out along ${street}`;
+    case "arrive":
+      return "Arrive at your destination";
+    case "turn":
+      return `Turn ${modifier ?? ""} onto ${street}`.replace(/\s+/g, " ");
+    case "new name":
+      return `Continue onto ${street}`;
+    case "merge":
+      return `Merge ${modifier ?? ""} onto ${street}`.replace(/\s+/g, " ");
+    case "roundabout":
+    case "rotary":
+      return `Take the roundabout onto ${street}`;
+    case "fork":
+      return `Keep ${modifier ?? "ahead"} at the fork`;
+    case "end of road":
+      return `At the end of the road, turn ${modifier ?? ""}`.trim();
+    case "continue":
+      return `Continue ${modifier ?? "straight"} on ${street}`.replace(
+        /\s+/g,
+        " ",
+      );
+    default:
+      return `Continue on ${street}`;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -141,10 +195,25 @@ export function useRoute(): UseRouteReturn {
           ([lng, lat]) => ({ lat, lng }),
         );
 
+        // Flatten OSRM legs → our flat steps list. For point-to-point
+        // routes there's only one leg, but legs[] is the generic shape.
+        const steps = first.legs.flatMap((leg) =>
+          leg.steps.map((step) => {
+            const [lng, lat] = step.maneuver.location;
+            return {
+              instruction: formatManeuver(step),
+              distanceMeters: step.distance,
+              durationSeconds: step.duration,
+              coords: { lat, lng },
+            };
+          }),
+        );
+
         const route: Route = {
           geometry,
           distanceMeters: first.distance,
           durationSeconds: first.duration,
+          steps,
         };
 
         setRoute(route, destinationId ?? null);

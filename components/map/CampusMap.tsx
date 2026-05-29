@@ -1,22 +1,24 @@
 "use client";
 
 /**
- * NaviLag — Campus Map
+ * NaviLag — CampusMap
  *
- * The Leaflet wrapper. This component is client-only — it MUST be
- * imported with `dynamic(() => ..., { ssr: false })` from the page,
- * because Leaflet touches `window` at module load.
+ * The Leaflet wrapper. This file is only ever rendered on the client
+ * (the map page imports it with next/dynamic, ssr:false) because Leaflet
+ * touches window directly on import.
  *
- * Responsibilities:
- *   - Render the dark-themed tile layer
- *   - Place a marker for every location
- *   - Wire up clicks → store selection
- *   - Re-center smoothly when a location is selected externally
- *     (e.g. via search)
- *   - Render the active route polyline (when set)
+ * What lives here:
+ *   - MapContainer + dark CartoDB tile layer
+ *   - MapController — flies the map to selected locations & fits route bounds
+ *   - LocationMarkers — every location as a custom L.divIcon marker
+ *   - UserMarker — the GPS dot, when geolocation is granted
+ *   - RouteLine — the active walking-route polyline
+ *   - MapControls — floating zoom + locate + recenter buttons
  */
 
-import { useEffect } from "react";
+import "leaflet/dist/leaflet.css";
+
+import { useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -25,14 +27,13 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
 import {
   LOCATIONS,
   CAMPUS_CENTER,
   CAMPUS_DEFAULT_ZOOM,
-  getLocationById,
 } from "@/lib/data/locations";
+import { getCategoryColorRaw } from "@/lib/data/categories";
 import { useMapStore } from "@/lib/store/useMapStore";
 import type { Location } from "@/lib/data/types";
 
@@ -40,67 +41,70 @@ import { createLocationIcon, createUserIcon } from "./LocationMarker";
 import MapControls from "./MapControls";
 
 // ---------------------------------------------------------------------------
-// Tile layer — CartoDB Dark Matter (free, no API key, dark by default)
+// Tile layer constants
 // ---------------------------------------------------------------------------
 
 const DARK_TILE_URL =
   "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 // ---------------------------------------------------------------------------
-// Inner component — uses Leaflet hooks (must live inside MapContainer)
+// MapController — imperative side effects against the Leaflet map instance
 // ---------------------------------------------------------------------------
 
 /**
- * Watches the selected location and pans/zooms the map to it.
- * Living inside <MapContainer> means we can call useMap() to grab
- * the actual Leaflet instance.
+ * Watches selected location + active route and pans the map accordingly.
+ * Lives inside <MapContainer> so it can call useMap().
  */
 function MapController() {
   const map = useMap();
   const selectedLocationId = useMapStore((s) => s.selectedLocationId);
   const route = useMapStore((s) => s.route);
 
-  // Fly to selected location
+  // Pan to the selected location
   useEffect(() => {
     if (!selectedLocationId) return;
-    const location = getLocationById(selectedLocationId);
+    const location = LOCATIONS.find((l) => l.id === selectedLocationId);
     if (!location) return;
 
-    map.flyTo([location.coords.lat, location.coords.lng], 18, {
+    map.flyTo([location.coords.lat, location.coords.lng], 17.5, {
       duration: 0.8,
       easeLinearity: 0.25,
     });
   }, [selectedLocationId, map]);
 
-  // Fit the map to the active route
+  // Fit the map to the active route, with some padding
   useEffect(() => {
     if (!route || route.geometry.length < 2) return;
 
     const bounds = L.latLngBounds(
       route.geometry.map((p) => [p.lat, p.lng] as [number, number]),
     );
+
     map.fitBounds(bounds, {
-      padding: [80, 80],
+      padding: [60, 60],
       maxZoom: 18,
-      duration: 0.8,
+      animate: true,
     });
   }, [route, map]);
 
   return null;
 }
 
-/**
- * Markers for every location in the dataset.
- * Filtered by activeCategory if set.
- */
+// ---------------------------------------------------------------------------
+// LocationMarkers — every campus location, filterable by active category
+// ---------------------------------------------------------------------------
+
 function LocationMarkers() {
   const selectLocation = useMapStore((s) => s.selectLocation);
   const selectedLocationId = useMapStore((s) => s.selectedLocationId);
   const activeCategory = useMapStore((s) => s.activeCategory);
   const routeDestinationId = useMapStore((s) => s.routeDestinationId);
+  const compareLocationId = useMapStore((s) => s.compareLocationId);
+  const compareMode = useMapStore((s) => s.compareMode);
+  const setCompareLocation = useMapStore((s) => s.setCompareLocation);
 
   const visible: Location[] = activeCategory
     ? LOCATIONS.filter((loc) => loc.category === activeCategory)
@@ -111,17 +115,30 @@ function LocationMarkers() {
       {visible.map((location) => {
         const isSelected = location.id === selectedLocationId;
         const isDestination = location.id === routeDestinationId;
+        const isCompare = location.id === compareLocationId;
         return (
           <Marker
             key={location.id}
             position={[location.coords.lat, location.coords.lng]}
             icon={createLocationIcon({
               color: getCategoryColorRaw(location.category),
-              active: isSelected || isDestination,
-              size: isSelected || isDestination ? 36 : 28,
+              active: isSelected || isDestination || isCompare,
+              size: isSelected || isDestination || isCompare ? 36 : 28,
             })}
             eventHandlers={{
-              click: () => selectLocation(location.id),
+              click: () => {
+                // If in compare-picking mode and this isn't the already-selected
+                // primary, store this as the comparison target instead of
+                // replacing the selection.
+                if (
+                  compareMode === "picking" &&
+                  location.id !== selectedLocationId
+                ) {
+                  setCompareLocation(location.id);
+                  return;
+                }
+                selectLocation(location.id);
+              },
             }}
           />
         );
@@ -164,14 +181,14 @@ function RouteLine() {
       <Polyline
         positions={positions}
         pathOptions={{
-          color: "#0a0a0c",
-          weight: 9,
-          opacity: 0.8,
+          color: "#000000",
+          weight: 10,
+          opacity: 0.5,
           lineCap: "round",
           lineJoin: "round",
         }}
       />
-      {/* Inner accent line */}
+      {/* Inner colored line */}
       <Polyline
         positions={positions}
         pathOptions={{
@@ -187,38 +204,29 @@ function RouteLine() {
 }
 
 // ---------------------------------------------------------------------------
-// Color helper — pulls the actual hex from a CSS variable.
-// L.divIcon serializes to an HTML string, so we need raw hex, not var().
-// ---------------------------------------------------------------------------
-
-const CATEGORY_HEX: Record<Location["category"], string> = {
-  faculty: "#3b9eff",
-  hostel: "#fbbf24",
-  library: "#22d3ee",
-  cafeteria: "#fb7185",
-  admin: "#a78bfa",
-  sports: "#34d399",
-  medical: "#f87171",
-  landmark: "#e4e4e7",
-};
-
-function getCategoryColorRaw(category: Location["category"]): string {
-  return CATEGORY_HEX[category];
-}
-
-// ---------------------------------------------------------------------------
-// Main exported component
+// Default export — the map itself
 // ---------------------------------------------------------------------------
 
 export default function CampusMap() {
+  // Use useMemo so we don't re-create handlers on every render
+  const initialView = useMemo(
+    () =>
+      ({
+        center: [CAMPUS_CENTER.lat, CAMPUS_CENTER.lng] as [number, number],
+        zoom: CAMPUS_DEFAULT_ZOOM,
+      }) as const,
+    [],
+  );
+
   return (
     <MapContainer
-      center={[CAMPUS_CENTER.lat, CAMPUS_CENTER.lng]}
-      zoom={CAMPUS_DEFAULT_ZOOM}
+      center={initialView.center}
+      zoom={initialView.zoom}
       // Disable default zoom control — we'll add a custom one
       zoomControl={false}
-      // No max zoom limits the user can reach building level
-      maxZoom={19}
+      // CartoDB Dark Matter tiles max out at zoom 19, but quality drops
+      // noticeably past 18. Cap here so users never see broken/black tiles.
+      maxZoom={18}
       minZoom={14}
       // Keep the map within a sensible bounding area around UNILAG
       maxBounds={[
@@ -235,6 +243,10 @@ export default function CampusMap() {
       <TileLayer
         url={DARK_TILE_URL}
         attribution={TILE_ATTRIBUTION}
+        // Tell Leaflet not to request tiles beyond what CartoDB actually
+        // serves — past zoom 18 the provider returns empty/black tiles.
+        maxNativeZoom={18}
+        maxZoom={18}
         // CartoDB supports retina tiles via {r}
         detectRetina={true}
         // Subdomains spread requests across multiple servers (faster)

@@ -3,6 +3,7 @@
  *
  * Two stores live here:
  *   - `useMapStore`     — ephemeral UI state (in-memory, resets on refresh)
+ *     plus `recentlyViewed` (localStorage) and compare-mode
  *   - `useFavoritesStore` — favorites that adapt to auth:
  *       * signed out: localStorage
  *       * signed in:  Supabase, with one-time merge of localStorage on sign-in
@@ -20,7 +21,7 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 
 // ---------------------------------------------------------------------------
-// Map UI state (unchanged from before)
+// Map UI state
 // ---------------------------------------------------------------------------
 
 type MapState = {
@@ -46,16 +47,39 @@ type MapState = {
 
   isSheetExpanded: boolean;
   setSheetExpanded: (expanded: boolean) => void;
+
+  /** Most recently viewed location IDs, newest first. Max 8. */
+  recentlyViewed: string[];
+  pushRecentlyViewed: (locationId: string) => void;
+  clearRecentlyViewed: () => void;
+
+  /**
+   * Compare mode — the user picks a second location, and we route between
+   * the two without needing GPS. Useful for planning walks.
+   *
+   *  - compareMode: "idle"        nothing happening
+   *  - compareMode: "picking"     user clicked "Compare with…" and is now
+   *                               selecting the second location
+   *  - compareMode: "active"      both locations chosen, route is being
+   *                               drawn between them
+   */
+  compareMode: "idle" | "picking" | "active";
+  compareLocationId: string | null;
+  startCompare: () => void;
+  setCompareLocation: (id: string) => void;
+  exitCompare: () => void;
 };
 
-export const useMapStore = create<MapState>((set) => ({
+export const useMapStore = create<MapState>((set, get) => ({
   selectedLocationId: null,
-  selectLocation: (id) =>
+  selectLocation: (id) => {
+    if (id) get().pushRecentlyViewed(id);
     set({
       selectedLocationId: id,
       isSearchOpen: false,
       isSheetExpanded: id !== null,
-    }),
+    });
+  },
 
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -77,6 +101,59 @@ export const useMapStore = create<MapState>((set) => ({
 
   isSheetExpanded: false,
   setSheetExpanded: (expanded) => set({ isSheetExpanded: expanded }),
+
+  // Recently viewed — persisted to localStorage manually so it survives reloads.
+  recentlyViewed: (() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("navilag-recent-v1");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+    } catch {
+      return [];
+    }
+  })(),
+  pushRecentlyViewed: (locationId) => {
+    set((state) => {
+      const next = [
+        locationId,
+        ...state.recentlyViewed.filter((id) => id !== locationId),
+      ].slice(0, 8);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("navilag-recent-v1", JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      }
+      return { recentlyViewed: next };
+    });
+  },
+  clearRecentlyViewed: () => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("navilag-recent-v1");
+      } catch {
+        // ignore
+      }
+    }
+    set({ recentlyViewed: [] });
+  },
+
+  // Compare mode — two-location routing
+  compareMode: "idle",
+  compareLocationId: null,
+  startCompare: () => set({ compareMode: "picking", compareLocationId: null }),
+  setCompareLocation: (id) =>
+    set({ compareMode: "active", compareLocationId: id }),
+  exitCompare: () =>
+    set({
+      compareMode: "idle",
+      compareLocationId: null,
+      route: null,
+      routeDestinationId: null,
+    }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -138,140 +215,150 @@ export const useFavoritesStore = create<FavoritesState>()(
       requiresAuth: false,
       setRequiresAuth: (val) => set({ requiresAuth: val }),
 
-      isFavorite: (locationId) =>
-        get().favorites.some((f) => f.locationId === locationId),
-
       toggleFavorite: async (locationId) => {
-        const supabase = createClient();
-        const { data: userData } = await supabase.auth.getUser();
-        const user = userData.user;
-
         const current = get().favorites;
         const existing = current.find((f) => f.locationId === locationId);
 
-        if (user) {
-          // Signed in — write to Supabase, mirror to local state
-          if (existing) {
-            await supabase
-              .from("favorites")
-              .delete()
-              .eq("user_id", user.id)
-              .eq("location_id", locationId);
-            set({
-              favorites: current.filter((f) => f.locationId !== locationId),
-            });
-          } else {
-            const savedAt = new Date().toISOString();
-            await supabase.from("favorites").insert({
-              user_id: user.id,
-              location_id: locationId,
-              saved_at: savedAt,
-            });
-            set({
-              favorites: [{ locationId, savedAt }, ...current],
-            });
-          }
-          return;
-        }
-
-        // Signed out — local only
-        const next = existing
+        // Build the next list (we'll persist it after the optimistic update)
+        const next: FavoriteRecord[] = existing
           ? current.filter((f) => f.locationId !== locationId)
-          : [{ locationId, savedAt: new Date().toISOString() }, ...current];
+          : [
+              ...current,
+              {
+                locationId,
+                savedAt: new Date().toISOString(),
+              },
+            ];
+
+        // Optimistic update
         set({ favorites: next });
+
+        // Try Supabase if we have a session, otherwise mirror to localStorage
+        try {
+          const supabase = createClient();
+          const { data: sessionData } = await supabase.auth.getSession();
+          const userId = sessionData.session?.user.id;
+
+          if (userId) {
+            if (existing) {
+              await supabase
+                .from("favorites")
+                .delete()
+                .eq("user_id", userId)
+                .eq("location_id", locationId);
+            } else {
+              await supabase.from("favorites").insert({
+                user_id: userId,
+                location_id: locationId,
+                saved_at: new Date().toISOString(),
+              });
+            }
+          } else {
+            // Signed out — mirror to localStorage
+            writeLocal(next);
+          }
+        } catch (err) {
+          console.error("toggleFavorite: persist failed", err);
+          // Roll back optimistic update on error
+          set({ favorites: current });
+        }
       },
 
+      isFavorite: (locationId) =>
+        get().favorites.some((f) => f.locationId === locationId),
+
       clearFavorites: async () => {
-        const supabase = createClient();
-        const { data: userData } = await supabase.auth.getUser();
-        if (userData.user) {
-          await supabase
-            .from("favorites")
-            .delete()
-            .eq("user_id", userData.user.id);
-        }
+        const previous = get().favorites;
         set({ favorites: [] });
+        try {
+          const supabase = createClient();
+          const { data: sessionData } = await supabase.auth.getSession();
+          const userId = sessionData.session?.user.id;
+          if (userId) {
+            await supabase.from("favorites").delete().eq("user_id", userId);
+          } else {
+            writeLocal([]);
+          }
+        } catch (err) {
+          console.error("clearFavorites: failed", err);
+          set({ favorites: previous });
+        }
       },
 
       loadFromSupabase: async (userId) => {
         set({ isLoading: true });
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("favorites")
-          .select("location_id, saved_at")
-          .eq("user_id", userId)
-          .order("saved_at", { ascending: false });
+        try {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from("favorites")
+            .select("location_id, saved_at")
+            .eq("user_id", userId)
+            .order("saved_at", { ascending: false });
 
-        if (!error && data) {
-          set({
-            favorites: data.map((row) => ({
-              locationId: row.location_id,
-              savedAt: row.saved_at,
-            })),
-            isLoading: false,
-          });
-        } else {
+          if (error) throw error;
+
+          const records: FavoriteRecord[] = (data ?? []).map((row) => ({
+            locationId: row.location_id as string,
+            savedAt: row.saved_at as string,
+          }));
+
+          set({ favorites: records, isLoading: false });
+        } catch (err) {
+          console.error("loadFromSupabase: failed", err);
           set({ isLoading: false });
         }
       },
 
       mergeLocalIntoSupabase: async (userId) => {
         const local = readLocal();
-        if (local.length === 0) {
+        if (local.length === 0) return;
+
+        try {
+          const supabase = createClient();
+          // Insert ignoring conflicts (table should have unique
+          // constraint on (user_id, location_id))
+          await supabase.from("favorites").upsert(
+            local.map((f) => ({
+              user_id: userId,
+              location_id: f.locationId,
+              saved_at: f.savedAt,
+            })),
+            { onConflict: "user_id,location_id" },
+          );
+          // Clear local store after merge
+          writeLocal([]);
+          // Reload from Supabase so we have the canonical list
           await get().loadFromSupabase(userId);
-          return;
+        } catch (err) {
+          console.error("mergeLocalIntoSupabase: failed", err);
         }
-
-        const supabase = createClient();
-        // Insert with upsert to avoid dup conflicts on (user_id, location_id)
-        const rows = local.map((f) => ({
-          user_id: userId,
-          location_id: f.locationId,
-          saved_at: f.savedAt,
-        }));
-        await supabase
-          .from("favorites")
-          .upsert(rows, { onConflict: "user_id,location_id" });
-
-        // Clear local — Supabase is now the source of truth
-        writeLocal([]);
-
-        // Reload to reflect merged state
-        await get().loadFromSupabase(userId);
       },
 
       resetToLocal: () => {
-        // Reload favorites from localStorage (which persist middleware
-        // will have hydrated on initial mount)
-        set({ favorites: readLocal() });
+        const local = readLocal();
+        set({ favorites: local });
       },
     }),
     {
       name: "navilag-favorites-v1",
-      storage: createJSONStorage(() => {
-        if (typeof window === "undefined") {
-          return {
-            getItem: () => null,
-            setItem: () => {},
-            removeItem: () => {},
-          };
-        }
-        return localStorage;
-      }),
-      // Only persist `favorites` to localStorage (not the auth flags)
+      storage: createJSONStorage(() => localStorage),
+      // Only persist `favorites`; everything else is runtime
       partialize: (state) => ({ favorites: state.favorites }),
     },
   ),
 );
 
 // ---------------------------------------------------------------------------
-// Slice selectors
+// Selectors / convenience hooks
 // ---------------------------------------------------------------------------
 
 export const useSelectedLocationId = () =>
   useMapStore((s) => s.selectedLocationId);
 
-export const useSearchQuery = () => useMapStore((s) => s.searchQuery);
 export const useActiveCategory = () => useMapStore((s) => s.activeCategory);
-export const useRoute = () => useMapStore((s) => s.route);
+
 export const useUserPosition = () => useMapStore((s) => s.userPosition);
+
+export const useActiveRoute = () => useMapStore((s) => s.route);
+
+export const useIsSearchOpen = () => useMapStore((s) => s.isSearchOpen);

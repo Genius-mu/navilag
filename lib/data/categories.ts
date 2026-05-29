@@ -117,6 +117,23 @@ export function getCategory(id: CategoryId): Category {
  * Use this in inline styles when you can't reach Tailwind utility classes
  * (e.g. setting marker fill on dynamically-generated SVGs).
  */
-export function getCategoryColor(id: CategoryId): string {
-  return `var(${CATEGORIES[id].colorVar})`;
+/**
+ * Like getCategoryColor, but returns the RAW hex value instead of a CSS
+ * variable reference. Use this when you need to pass the color into a
+ * non-CSS context — like Leaflet's SVG marker generator, where `var(...)`
+ * won't resolve.
+ */
+export function getCategoryColorRaw(categoryId: CategoryId): string {
+  // Maps must match the values in app/globals.css under :root
+  const RAW: Record<CategoryId, string> = {
+    faculty: "#3b9eff",
+    hostel: "#fbbf24",
+    library: "#a78bfa",
+    cafeteria: "#34d399",
+    admin: "#22d3ee",
+    sports: "#fb7185",
+    medical: "#f87171",
+    landmark: "#e4e4e7",
+  };
+  return RAW[categoryId] ?? "#e4e4e7";
 }
