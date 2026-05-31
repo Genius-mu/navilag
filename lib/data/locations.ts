@@ -143,7 +143,8 @@ export const LOCATIONS: Location[] = [
     aliases: ["dli"],
     category: "faculty",
     coords: { lat: 6.5198, lng: 3.4002 },
-    shortDescription: "UNILAG's part-time and distance learning programmes.",
+    shortDescription:
+      "UNILAG's part-time and distance learning programmes.",
   },
 
   // -------------------------------------------------------------------
@@ -181,7 +182,8 @@ export const LOCATIONS: Location[] = [
     aliases: ["new", "fagunwa", "new hall hostel"],
     category: "hostel",
     coords: { lat: 6.5201, lng: 3.4008 },
-    shortDescription: "Female hall of residence, also known as Fagunwa Hall.",
+    shortDescription:
+      "Female hall of residence, also known as Fagunwa Hall.",
   },
   {
     id: "amina-hall",
@@ -307,7 +309,8 @@ export const LOCATIONS: Location[] = [
     aliases: ["main gate", "akoka gate", "front gate", "campus gate"],
     category: "landmark",
     coords: { lat: 6.5147, lng: 3.3946 },
-    shortDescription: "The main entrance from Akoka. Most students enter here.",
+    shortDescription:
+      "The main entrance from Akoka. Most students enter here.",
     freshersPick: true,
   },
   {
@@ -329,7 +332,7 @@ export const LOCATIONS: Location[] = [
  * Used by the store, route-by-id, the detail page, favorites, etc.
  */
 const LOCATIONS_BY_ID: Map<string, Location> = new Map(
-  LOCATIONS.map((loc) => [loc.id, loc]),
+  LOCATIONS.map((loc) => [loc.id, loc])
 );
 
 /**
@@ -344,7 +347,7 @@ export function getLocationById(id: string): Location | undefined {
  * All locations in a given category, preserving original order.
  */
 export function getLocationsByCategory(
-  category: Location["category"],
+  category: Location["category"]
 ): Location[] {
   return LOCATIONS.filter((loc) => loc.category === category);
 }
@@ -358,6 +361,58 @@ export function getFreshersPicks(): Location[] {
 }
 
 /**
+ * The faculty BUILDING for a given faculty name. There's at most one
+ * (category === "faculty" + matching `faculty` field). Used by the
+ * personalized freshers experience to anchor "your faculty" to a
+ * specific map location.
+ */
+export function getFacultyBuilding(facultyName: string): Location | undefined {
+  return LOCATIONS.find(
+    (loc) => loc.category === "faculty" && loc.faculty === facultyName
+  );
+}
+
+/**
+ * All locations within `radiusMeters` of the given faculty's building.
+ * Returns them sorted nearest-first. Excludes the faculty building itself.
+ * If we can't find the faculty building, returns an empty list.
+ */
+export function getLocationsNearFaculty(
+  facultyName: string,
+  radiusMeters: number = 500
+): Array<Location & { distanceMeters: number }> {
+  const facultyBuilding = getFacultyBuilding(facultyName);
+  if (!facultyBuilding) return [];
+
+  const origin = facultyBuilding.coords;
+  return LOCATIONS.filter((loc) => loc.id !== facultyBuilding.id)
+    .map((loc) => ({
+      ...loc,
+      distanceMeters: haversine(origin, loc.coords),
+    }))
+    .filter((loc) => loc.distanceMeters <= radiusMeters)
+    .sort((a, b) => a.distanceMeters - b.distanceMeters);
+}
+
+/**
+ * Local haversine — duplicated here to avoid a circular import between
+ * locations.ts and utils/distance.ts (which already imports types from
+ * this file's neighborhood). Cheap to inline.
+ */
+function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000; // meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+/**
  * The geographic center of all locations — used as the initial map
  * center on first load. Calculated once at module load.
  */
@@ -367,7 +422,7 @@ export const CAMPUS_CENTER = (() => {
       lat: acc.lat + loc.coords.lat,
       lng: acc.lng + loc.coords.lng,
     }),
-    { lat: 0, lng: 0 },
+    { lat: 0, lng: 0 }
   );
   return {
     lat: sum.lat / LOCATIONS.length,

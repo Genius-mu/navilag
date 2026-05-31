@@ -5,13 +5,13 @@
  * with `freshersPick: true` from the dataset and presents them as
  * an onboarding flow grouped by first-week priorities.
  *
- * Server component — all static, instant load, SEO-friendly.
+ * Server component — all static, instant load, SEO-friendly. The
+ * personalized section is a client island (PersonalizedFreshers).
  */
 
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  ArrowLeft,
   ArrowRight,
   MapPin,
   Compass,
@@ -33,6 +33,9 @@ import {
 import { getFreshersPicks } from "@/lib/data/locations";
 import { CATEGORIES, CATEGORY_LIST } from "@/lib/data/categories";
 import type { CategoryId, Location } from "@/lib/data/types";
+
+import SiteHeader from "@/components/layout/SiteHeader";
+import PersonalizedFreshers from "@/components/freshers/PersonalizedFreshers";
 
 // ---------------------------------------------------------------------------
 // Metadata
@@ -84,7 +87,7 @@ export default function FreshersPage() {
       acc[cat].push(loc);
       return acc;
     },
-    {} as Record<CategoryId, Location[]>,
+    {} as Record<CategoryId, Location[]>
   );
 
   // Display order — match the categories that matter most in week one
@@ -102,23 +105,8 @@ export default function FreshersPage() {
     <main className="relative min-h-dvh overflow-hidden">
       <BackdropGrid />
 
-      {/* ============ Top bar ============ */}
-      <header className="relative z-10 flex items-center justify-between gap-3 px-6 py-5 md:px-10">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 rounded-md border border-border-default bg-bg-elevated/60 px-3 py-1.5 text-sm font-medium text-text-primary backdrop-blur-sm transition-colors hover:bg-bg-elevated"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span className="hidden sm:inline">Home</span>
-        </Link>
-        <Link
-          href="/map"
-          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
-        >
-          Open Map
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </header>
+      {/* ============ Top bar (auth-aware) ============ */}
+      <SiteHeader />
 
       {/* ============ Hero ============ */}
       <section className="relative z-10 px-6 pt-10 pb-16 md:px-10 md:pt-16 md:pb-24">
@@ -147,11 +135,14 @@ export default function FreshersPage() {
           </p>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-text-secondary md:text-lg">
             This page is the cheat sheet — the buildings you&apos;ll actually
-            need to find in your first month. Tap any of them to see them on the
-            map. We&apos;ll get you to class.
+            need to find in your first month. Tap any of them to see them on
+            the map. We&apos;ll get you to class.
           </p>
         </div>
       </section>
+
+      {/* ============ Personalized for signed-in users ============ */}
+      <PersonalizedFreshers />
 
       {/* ============ Start here — top 4 essentials ============ */}
       <section className="relative z-10 border-t border-border-subtle px-6 py-16 md:px-10">
@@ -221,7 +212,9 @@ export default function FreshersPage() {
                   >
                     <CategoryIcon name={category.icon} className="h-4 w-4" />
                     <span>{category.label}</span>
-                    <span className="text-text-muted">· {items.length}</span>
+                    <span className="text-text-muted">
+                      · {items.length}
+                    </span>
                   </div>
 
                   <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
