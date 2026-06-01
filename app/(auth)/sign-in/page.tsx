@@ -6,18 +6,28 @@
  * Email + password authentication via Supabase.
  * On success, redirect to wherever the user was trying to go (read
  * from ?next=...), defaulting to the map page.
+ *
+ * Also handles two query flags coming back from related flows:
+ *   - ?reset=1       → user just finished setting a new password
+ *   - ?auth_error=1  → auth callback failed (e.g. expired link)
  */
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Mail, Loader2, AlertTriangle, HelpCircle } from "lucide-react";
+import Link from "next/link";
+import {
+  Mail,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  ShieldAlert,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import AuthCard from "@/components/auth/AuthCard";
 import { Field, PasswordField } from "@/components/auth/AuthFields";
 
 export default function SignInPage() {
   return (
-    // useSearchParams needs a Suspense boundary at the page level
     <Suspense fallback={null}>
       <SignInForm />
     </Suspense>
@@ -29,16 +39,15 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // ?next=/some/path lets us redirect users back where they came from
-  // after signing in (e.g. they clicked "Save" on a map marker)
   const nextPath = searchParams.get("next") || "/map";
+  const justReset = searchParams.get("reset") === "1";
+  const authError = searchParams.get("auth_error") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,8 +74,6 @@ function SignInForm() {
       return;
     }
 
-    // Hard-refresh to the next path so server components re-render
-    // with the new auth state
     router.push(nextPath);
     router.refresh();
   };
@@ -83,6 +90,22 @@ function SignInForm() {
       }}
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {/* Inline banners from sibling flows */}
+        {justReset && (
+          <div className="flex items-start gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Password updated. Sign in with your new password.</span>
+          </div>
+        )}
+        {authError && (
+          <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              That link expired or was already used. Try signing in below.
+            </span>
+          </div>
+        )}
+
         <Field
           id="email"
           label="Email"
@@ -111,25 +134,15 @@ function SignInForm() {
             required
           />
 
-          {/* Forgot password — expands an inline notice */}
+          {/* Forgot password — real link now */}
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowForgot((v) => !v)}
-              className="inline-flex items-center gap-1 text-[11px] text-text-muted underline-offset-2 transition-colors hover:text-text-secondary hover:underline"
+            <Link
+              href="/forgot-password"
+              className="text-[11px] text-text-muted underline-offset-2 transition-colors hover:text-text-secondary hover:underline"
             >
-              <HelpCircle className="h-3 w-3" />
               Forgot password?
-            </button>
+            </Link>
           </div>
-
-          {showForgot && (
-            <div className="rounded-md border border-border-subtle bg-bg-elevated/60 px-3 py-2 text-[12px] leading-relaxed text-text-secondary">
-              Password reset is coming soon. In the meantime, if you can&apos;t
-              get in, check your password manager — your browser may have
-              autofilled it the first time.
-            </div>
-          )}
         </div>
 
         {error && (
