@@ -95,9 +95,15 @@ export default function MapPage() {
   const compareLocationId = useMapStore((s) => s.compareLocationId);
   const { fetchRoute } = useRoute();
 
-  // Deep-link: ?id=<slug> selects a location, ?category=<id> filters
+// Deep-link: ?id=<slug> selects a location, ?category=<id> filters.
+  // Also hydrates recentlyViewed from localStorage now that we're on
+  // the client (delayed to avoid SSR hydration mismatch).
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Hydrate the recents list from localStorage
+    useMapStore.getState().hydrateRecentlyViewed();
+
     const params = new URLSearchParams(window.location.search);
     const idParam = params.get("id");
     const categoryParam = params.get("category") as CategoryId | null;

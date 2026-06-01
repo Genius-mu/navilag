@@ -48,8 +48,14 @@ type MapState = {
   isSheetExpanded: boolean;
   setSheetExpanded: (expanded: boolean) => void;
 
-  /** Most recently viewed location IDs, newest first. Max 8. */
+/** Most recently viewed location IDs, newest first. Max 8. */
   recentlyViewed: string[];
+  /**
+   * Hydrate `recentlyViewed` from localStorage. MUST be called only on the
+   * client (e.g. inside a useEffect) — calling during SSR causes a
+   * hydration mismatch because the server has no localStorage. Idempotent.
+   */
+  hydrateRecentlyViewed: () => void;
   pushRecentlyViewed: (locationId: string) => void;
   clearRecentlyViewed: () => void;
 
@@ -103,17 +109,23 @@ export const useMapStore = create<MapState>((set, get) => ({
   setSheetExpanded: (expanded) => set({ isSheetExpanded: expanded }),
 
   // Recently viewed — persisted to localStorage manually so it survives reloads.
-  recentlyViewed: (() => {
-    if (typeof window === "undefined") return [];
+ // Recently viewed — starts empty on both server and client to avoid
+  // hydration mismatches. The map page calls hydrateRecentlyViewed() once
+  // mounted, which loads any saved entries from localStorage.
+  recentlyViewed: [],
+  hydrateRecentlyViewed: () => {
+    if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem("navilag-recent-v1");
-      if (!raw) return [];
+      if (!raw) return;
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+      if (Array.isArray(parsed)) {
+        set({ recentlyViewed: parsed.slice(0, 8) });
+      }
     } catch {
-      return [];
+      // ignore — leave as []
     }
-  })(),
+  },
   pushRecentlyViewed: (locationId) => {
     set((state) => {
       const next = [
