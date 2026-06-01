@@ -240,3 +240,18 @@ body {
 .navilag-marker.is-active {
   z-index: 1000;
 }
+
+/* ---------------------------------------------------------------------
+ * Auth input autofill — Chrome paints autofilled fields with its own
+ * yellow/white background, which destroys the dark theme. Force it
+ * back to our colors via the legacy webkit shadow trick.
+ * --------------------------------------------------------------------- */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-base) inset !important;
+  caret-color: var(--text-primary) !important;
+  transition: background-color 9999s ease-in-out 0s;
+}

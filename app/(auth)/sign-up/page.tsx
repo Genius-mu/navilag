@@ -18,7 +18,12 @@ import { useRouter } from "next/navigation";
 import { Mail, Loader2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import AuthCard from "@/components/auth/AuthCard";
-import { Field, PasswordField } from "@/components/auth/AuthFields";
+import {
+  Field,
+  PasswordField,
+  PasswordStrength,
+  isPasswordAcceptable,
+} from "@/components/auth/AuthFields";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -34,8 +39,10 @@ export default function SignUpPage() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (!isPasswordAcceptable(password)) {
+      setError(
+        "Use at least 8 characters with a mix of letters and numbers.",
+      );
       return;
     }
 
@@ -75,7 +82,7 @@ export default function SignUpPage() {
         <Field
           id="email"
           label="Email"
-          icon={<Mail className="h-4 w-4" />}
+          icon={<Mail className="h-3.5 w-3.5" />}
           type="email"
           inputMode="email"
           autoComplete="email"
@@ -86,19 +93,21 @@ export default function SignUpPage() {
           disabled={isSubmitting}
         />
 
-        <PasswordField
-          id="password"
-          label="Password"
-          autoComplete="new-password"
-          placeholder="At least 6 characters"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          show={showPassword}
-          onToggleShow={() => setShowPassword((s) => !s)}
-          disabled={isSubmitting}
-          hint="Use 6 or more characters."
-          required
-        />
+        <div className="flex flex-col gap-2">
+          <PasswordField
+            id="password"
+            label="Password"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            show={showPassword}
+            onToggleShow={() => setShowPassword((s) => !s)}
+            disabled={isSubmitting}
+            required
+          />
+          <PasswordStrength password={password} />
+        </div>
 
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -110,10 +119,16 @@ export default function SignUpPage() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="mt-2 inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-60"
+          className="mt-2 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-60"
         >
-          {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          Create account
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Creating account…
+            </>
+          ) : (
+            "Create account"
+          )}
         </button>
 
         <p className="text-center text-[11px] leading-relaxed text-text-muted">
